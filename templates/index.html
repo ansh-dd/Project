@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>College Timetable Management System</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>AI Timetable</h1>
+      <nav>
+        <button class="nav-btn active" data-target="dashboard">Dashboard</button>
+        <button class="nav-btn" data-target="departments">Departments</button>
+        <button class="nav-btn" data-target="faculty">Faculty</button>
+        <button class="nav-btn" data-target="subjects">Subjects</button>
+        <button class="nav-btn" data-target="rooms">Rooms</button>
+        <button class="nav-btn" data-target="timetable">Timetable</button>
+      </nav>
+    </aside>
+    <main class="content">
+      <section class="panel login-panel" id="login-panel">
+        <div class="login-card">
+          <h2>Admin Login</h2>
+          <p>Use <strong>admin / admin123</strong> to explore the seeded system.</p>
+          <form id="login-form">
+            <input name="username" placeholder="Username" value="admin" required />
+            <input name="password" type="password" placeholder="Password" value="admin123" required />
+            <button type="submit">Sign In</button>
+          </form>
+          <p id="login-message"></p>
+        </div>
+      </section>
+
+      <section class="panel hidden" id="app-panel">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">Constraint-based scheduling</p>
+            <h2>College Timetable Management System</h2>
+            <p>Generate conflict-free schedules, inspect constraints, and review class, faculty, and room allocations.</p>
+          </div>
+          <div class="hero-actions">
+            <button id="generate-btn">Generate Timetable</button>
+            <button id="reset-btn" class="secondary">Reset</button>
+            <button id="logout-btn" class="secondary">Logout</button>
+          </div>
+        </header>
+
+        <section id="dashboard" class="view active-view">
+          <div class="cards" id="stats"></div>
+          <div class="two-col">
+            <div class="card">
+              <h3>Conflict Check</h3>
+              <ul id="conflicts"></ul>
+            </div>
+            <div class="card">
+              <h3>System Notes</h3>
+              <ul>
+                <li>Labs are placed first using continuous multi-slot blocks.</li>
+                <li>Preferred faculty slots are prioritized before standard availability.</li>
+                <li>The scheduler backtracks when it encounters hard-constraint clashes.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="departments" class="view hidden">
+          <div class="table-card">
+            <h3>Departments & Classes</h3>
+            <div id="departments-table"></div>
+            <div id="classes-table"></div>
+          </div>
+        </section>
+
+        <section id="faculty" class="view hidden">
+          <div class="table-card">
+            <h3>Faculty</h3>
+            <div id="faculty-table"></div>
+          </div>
+        </section>
+
+        <section id="subjects" class="view hidden">
+          <div class="table-card">
+            <h3>Subjects</h3>
+            <div id="subjects-table"></div>
+          </div>
+        </section>
+
+        <section id="rooms" class="view hidden">
+          <div class="table-card">
+            <h3>Rooms & Labs</h3>
+            <div id="rooms-table"></div>
+          </div>
+        </section>
+
+        <section id="timetable" class="view hidden">
+          <div class="table-card">
+            <h3>Generated Timetable</h3>
+            <div id="timetable-table"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script>
+    const views = document.querySelectorAll('.view');
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-btn').forEach(item => item.classList.remove('active'));
+        btn.classList.add('active');
+        views.forEach(view => view.classList.add('hidden'));
+        document.getElementById(btn.dataset.target).classList.remove('hidden');
+      });
+    });
+
+    function renderTable(targetId, items) {
+      const target = document.getElementById(targetId);
+      if (!items.length) {
+        target.innerHTML = '<p class="muted">No data available.</p>';
+        return;
+      }
+      const headers = Object.keys(items[0]);
+      target.innerHTML = `
+        <table>
+          <thead><tr>${headers.map(h => `<th>${h.replaceAll('_', ' ')}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${items.map(item => `<tr>${headers.map(header => `<td>${item[header]}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || data.message || 'Request failed');
+      return data;
+    }
+
+    async function loadDashboard() {
+      const stats = await api('/api/dashboard');
+      document.getElementById('stats').innerHTML = Object.entries(stats).map(([label, value]) => `
+        <article class="card stat-card">
+          <p>${label}</p>
+          <strong>${value}</strong>
+        </article>`).join('');
+      const conflicts = await api('/api/conflicts');
+      document.getElementById('conflicts').innerHTML = conflicts.issues.length
+        ? conflicts.issues.map(issue => `<li>${issue}</li>`).join('')
+        : '<li>No structural conflicts detected.</li>';
+    }
+
+    async function loadTables() {
+      renderTable('departments-table', await api('/api/departments'));
+      renderTable('classes-table', await api('/api/classes'));
+      renderTable('faculty-table', await api('/api/faculty'));
+      renderTable('subjects-table', await api('/api/subjects'));
+      renderTable('rooms-table', await api('/api/rooms'));
+      const timetable = await api('/api/timetable');
+      renderTable('timetable-table', timetable.entries);
+      await loadDashboard();
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.target);
+      try {
+        await api('/api/login', {
+          method: 'POST',
+          body: JSON.stringify(Object.fromEntries(formData.entries())),
+        });
+        document.getElementById('login-panel').classList.add('hidden');
+        document.getElementById('app-panel').classList.remove('hidden');
+        await loadTables();
+      } catch (error) {
+        document.getElementById('login-message').textContent = error.message;
+      }
+    });
+
+    document.getElementById('generate-btn').addEventListener('click', async () => {
+      try {
+        const result = await api('/api/generate-timetable', { method: 'POST' });
+        alert(result.message);
+        await loadTables();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', async () => {
+      await api('/api/reset-timetable', { method: 'POST' });
+      await loadTables();
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await api('/api/logout', { method: 'POST' });
+      location.reload();
+    });
+  </script>
+</body>
+</html>
